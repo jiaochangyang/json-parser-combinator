@@ -3,7 +3,7 @@ module JsonParser where
 import Data.Void
 import Control.Applicative
 import Text.Megaparsec
-import  Text.Megaparsec.Char as C
+import Text.Megaparsec.Char
 import Text.Megaparsec.Expr
 import qualified Text.Megaparsec.Char.Lexer as L
 import qualified Data.Map as Map
@@ -33,7 +33,6 @@ import qualified Data.Map as Map
     null
 -}
 
-
 data JSON = JsonNull
             | JsonNum Double
             | JsonBool Bool
@@ -46,7 +45,7 @@ type Parser = Parsec Void String
 
 -- Space consumer. Since JSON does not have comments, both line and block comments are empty
 sc :: Parser ()
-sc = L.space C.space1 empty empty
+sc = L.space space1 empty empty
 
 -- Parser that automatically consumes white space. As well as some other thing
 lexeme :: Parser a -> Parser a
@@ -58,10 +57,12 @@ symbol = L.symbol sc
 
 -- Parse String to basic types
 parseNull :: Parser ()
-parseNull = do string "null" ; return ()
+parseNull = do
+  _ <- string "null"
+  return ()
 
 parseBool :: Parser Bool
-parseBool = try (do string "true"  ; return True) <|>
+parseBool = try (do string "true" ; return True) <|>
                 (do string "false" ; return False)
 
 parseNum :: Parser Double
@@ -85,7 +86,8 @@ parseStr = do
             'r' -> return '\r'
             't' -> return '\t'
             'v' -> return '\v'
-            )
+            _ -> return c
+      )
       <|> anyChar
 
 parseArr :: Parser [JSON]
