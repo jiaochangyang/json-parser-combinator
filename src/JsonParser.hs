@@ -66,6 +66,9 @@ parseBool = try (do string "true" ; return True) <|>
 parseNum :: Parser Double
 parseNum = L.signed space L.float
 
+escapedSymbol :: Parser Char -> Parser Char
+escapedSymbol p = string "\\" *> p
+
 escapedQuote :: Parser Char
 escapedQuote = escapedSymbol (string "\"" >> return '\"')
 
@@ -75,14 +78,14 @@ escapedNewLine = escapedSymbol (char 'n')
 escapedTab :: Parser Char
 escapedTab = escapedSymbol (char 't')
 
-escapedSymbol :: Parser Char -> Parser Char
-escapedSymbol p = string "\\" *> p
-
 escapedSlash :: Parser Char
 escapedSlash = string "\\\\" >> return '\\'
 
+escapeSafePrintableChar :: Parser Char
+escapeSafePrintableChar = satisfy ( \x ->  x /=  '\"' && isPrint x)
+
 parseSafeChar :: Parser Char
-parseSafeChar = try escapedQuote <|> try escapedTab <|> try escapedNewLine <|> try escapedSlash <|> try (satisfy ( \x ->  x /=  '\"' && isPrint x))
+parseSafeChar = try escapedQuote <|> try escapedTab <|> try escapedNewLine <|> try escapedSlash <|> try escapeSafePrintableChar
 
 parseSafeStr :: Parser String
 parseSafeStr =  char '\"' *> many parseSafeChar <* char '\"'
