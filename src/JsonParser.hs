@@ -7,6 +7,7 @@ import Text.Megaparsec.Char
 import Text.Megaparsec.Expr
 import qualified Text.Megaparsec.Char.Lexer as L
 import qualified Data.Map as Map
+import Data.Char (isPrint)
 
 {-
   object
@@ -33,6 +34,7 @@ import qualified Data.Map as Map
     null
 -}
 
+
 data JSON = JsonNull
             | JsonNum Double
             | JsonBool Bool
@@ -44,16 +46,12 @@ data JSON = JsonNull
 type Parser = Parsec Void String
 
 -- Space consumer. Since JSON does not have comments, both line and block comments are empty
-sc :: Parser ()
-sc = L.space space1 empty empty
-
--- Parser that automatically consumes white space. As well as some other thing
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
+unpad :: Parser a -> Parser a
+unpad p = space *> p <* space
 
 -- Symbol parser that automatically gets rid of white space
 symbol :: String -> Parser String
-symbol = L.symbol sc
+symbol = unpad . string
 
 -- Parse String to basic types
 parseNull :: Parser ()
@@ -66,48 +64,47 @@ parseBool = try (do string "true" ; return True) <|>
                 (do string "false" ; return False)
 
 parseNum :: Parser Double
-parseNum = L.signed sc (lexeme L.float)
+parseNum = L.signed space L.float
 
-parseStr :: Parser String
-parseStr = do
-  _ <- lexeme $ char '\"'
-  parseStringChar `manyTill` (char '\"')
-  where
-    parseStringChar =
-      (do
-          _ <- char '\\'
-          c <- anyChar
-          case c of
-            '\"' -> return '\"'
-            '\\' -> return '\\'
-            'b' -> return '\b'
-            'f' -> return '\f'
-            'n' -> return '\n'
-            'r' -> return '\r'
-            't' -> return '\t'
-            'v' -> return '\v'
-            _ -> return c
-      )
-      <|> anyChar
+escapedQuote :: Parser Char
+escapedQuote = escapedSymbol (string "\"" >> return '\"')
+
+escapedNewLine :: Parser Char
+escapedNewLine = escapedSymbol (char 'n')
+
+escapedTab :: Parser Char
+escapedTab = escapedSymbol (char 't')
+
+escapedSymbol :: Parser Char -> Parser Char
+escapedSymbol p = string "\\" *> p
+
+escapedSlash :: Parser Char
+escapedSlash = string "\\\\" >> return '\\'
+
+parseSafeChar :: Parser Char
+parseSafeChar = try escapedQuote <|> try escapedTab <|> try escapedNewLine <|> try escapedSlash <|> try (satisfy ( \x ->  x /=  '\"' && isPrint x))
+
+parseSafeStr :: Parser String
+parseSafeStr =  char '\"' *> many parseSafeChar <* char '\"'
 
 parseArr :: Parser [JSON]
 parseArr = do
-  _ <- lexeme $ char '['
-  arr <- parseJSON `sepBy` (lexeme $ char ',')
-  _ <- lexeme $ char ']'
+  _ <- unpad $ char '['
+  arr <- parseJSON `sepBy` (unpad $ char ',')
+  _ <- unpad $ char ']'
   return arr
 
 parseMap :: Parser (Map.Map String JSON)
 parseMap = do
-  _ <- lexeme $ char '{'
+  _ <- unpad $ char '{'
   m <- keyValPair `sepBy` char ','
-  _ <- lexeme $ char '}'
+  _ <- unpad $ char '}'
   return $ Map.fromList m
   where
     keyValPair = do
-      _ <- many sc
-      key <- parseStr
-      _ <- lexeme $ char ':'
+      _ <- space
+      key <- parseSafeStr
+      _ <- unpad $ char ':'
       val <- parseJSON
       return (key, val)
 
@@ -124,7 +121,7 @@ parseJsonNum :: Parser JSON
 parseJsonNum = fmap JsonNum parseNum
 
 parseJsonStr :: Parser JSON
-parseJsonStr = fmap JsonString parseStr
+parseJsonStr = fmap JsonString parseSafeStr
 
 parseJsonArr :: Parser JSON
 parseJsonArr = fmap JsonArr parseArr
@@ -132,15 +129,18 @@ parseJsonArr = fmap JsonArr parseArr
 parseJsonMap :: Parser JSON
 parseJsonMap = fmap JsonMap parseMap
 
--- Main parser
 parseJSON :: Parser JSON
-parseJSON = do
-  _ <- many sc -- Parse white space before JSON
-  json <- parseJsonNull
-      <|> parseJsonBool
-      <|> parseJsonNum
-      <|> parseJsonStr
-      <|> parseJsonArr
-      <|> parseJsonMap
-  _ <- many sc
+parseJSON = parseJsonNull
+        <|> parseJsonBool
+        <|> parseJsonNum
+        <|> parseJsonStr
+        <|> parseJsonArr
+        <|> parseJsonMap
+-- Main parser
+parseJSONTop :: Parser JSON
+parseJSONTop = do
+  _ <- space -- Parse white space before JSON
+  json <- parseJSON
+  _ <- space
+  _ <- eof  -- Parse white space after JSON
   return json
